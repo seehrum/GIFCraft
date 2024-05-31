@@ -25,6 +25,16 @@ class GIFEditor:
         self.setup_ui()
         self.bind_keyboard_events()
 
+    def update_title(self):
+        """Update the window title to reflect the current file state."""
+        if self.frames:
+            if self.current_file:
+                self.master.title(f"GIFCraft - GIF Editor - {os.path.basename(self.current_file)}")
+            else:
+                self.master.title("GIFCraft - GIF Editor - Unsaved File")
+        else:
+            self.master.title("GIFCraft - GIF Editor")
+
     def setup_ui(self):
         """Set up the user interface."""
         self.setup_menu()
@@ -105,6 +115,12 @@ class GIFEditor:
         self.image_label = tk.Label(self.control_frame)
         self.image_label.pack()
 
+        self.dimension_label = tk.Label(self.control_frame, text="", font=("Arial", 8), fg="grey")
+        self.dimension_label.pack(pady=5)
+
+        self.total_duration_label = tk.Label(self.control_frame, text="", font=("Arial", 8), fg="grey")
+        self.total_duration_label.pack(pady=5)
+
         self.delay_label = tk.Label(self.control_frame, text="Frame Delay (ms):")
         self.delay_label.pack(pady=5)
 
@@ -173,7 +189,7 @@ class GIFEditor:
             with Image.open(file_path) as img:
                 for frame in ImageSequence.Iterator(img):
                     self.frames.append(self.center_image(self.resize_image(frame.copy())))
-                    delay = frame.info.get('duration', 100)
+                    delay = int(frame.info.get('duration', 100))  # Ensure delay is always an integer
                     self.delays.append(delay)
                     var = IntVar()
                     var.trace_add('write', lambda *args, i=len(self.checkbox_vars): self.set_current_frame(i))
@@ -182,6 +198,7 @@ class GIFEditor:
             self.update_frame_list()
             self.show_frame()
             self.current_file = file_path
+            self.update_title()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file: {e}")
 
@@ -260,10 +277,15 @@ class GIFEditor:
             self.image_label.config(text='')  # Remove text when showing image
             self.delay_entry.delete(0, tk.END)
             self.delay_entry.insert(0, str(self.delays[self.frame_index]))
+            self.dimension_label.config(text=f"Size: {frame.width}x{frame.height}")  # Show frame dimensions
+            total_duration = sum(self.delays)
+            self.total_duration_label.config(text=f"Total Duration: {total_duration} ms")  # Show total duration
         else:
             self.image_label.config(image='', text="No frames to display")
             self.image_label.image = None
             self.delay_entry.delete(0, tk.END)
+            self.dimension_label.config(text="")  # Clear frame dimensions
+            self.total_duration_label.config(text="")  # Clear total duration
         self.update_frame_list()  # Refresh the frame list to show the current frame indicator
 
     def delete_frames(self, event=None):
@@ -370,6 +392,8 @@ class GIFEditor:
         file_path = filedialog.asksaveasfilename(defaultextension=".gif", filetypes=[("GIF files", "*.gif"), ("PNG files", "*.png"), ("WebP files", "*.webp")])
         if file_path:
             self.save_to_file(file_path)
+            self.current_file = file_path
+            self.update_title()
 
     def save_to_file(self, file_path):
         """Save the frames and delays to the specified file in the given format."""
@@ -387,6 +411,7 @@ class GIFEditor:
                     messagebox.showerror("Error", f"Unsupported file format: {ext.upper()}")
                     return
                 self.current_file = file_path
+                self.update_title()
                 messagebox.showinfo("Success", f"{ext.upper()} saved successfully!")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save {ext.upper()}: {e}")
@@ -411,30 +436,33 @@ class GIFEditor:
 
     def save_state(self):
         """Save the current state for undo functionality."""
-        self.history.append((self.frames.copy(), self.delays.copy(), [var.get() for var in self.checkbox_vars], self.frame_index))
+        self.history.append((self.frames.copy(), self.delays.copy(), [var.get() for var in self.checkbox_vars], self.frame_index, self.current_file))
         self.redo_stack.clear()  # Clear the redo stack on new action
+
 
     def undo(self, event=None):
         """Undo the last action."""
         if self.history:
-            self.redo_stack.append((self.frames.copy(), self.delays.copy(), [var.get() for var in self.checkbox_vars], self.frame_index))
-            self.frames, self.delays, checkbox_states, self.frame_index = self.history.pop()
+            self.redo_stack.append((self.frames.copy(), self.delays.copy(), [var.get() for var in self.checkbox_vars], self.frame_index, self.current_file))
+            self.frames, self.delays, checkbox_states, self.frame_index, self.current_file = self.history.pop()
             self.checkbox_vars = [IntVar(value=state) for state in checkbox_states]
             for i, var in enumerate(self.checkbox_vars):
                 var.trace_add('write', lambda *args, i=i: self.set_current_frame(i))
             self.update_frame_list()
             self.show_frame()
+            self.update_title()
 
     def redo(self, event=None):
         """Redo the last undone action."""
         if self.redo_stack:
-            self.history.append((self.frames.copy(), self.delays.copy(), [var.get() for var in self.checkbox_vars], self.frame_index))
-            self.frames, self.delays, checkbox_states, self.frame_index = self.redo_stack.pop()
+            self.history.append((self.frames.copy(), self.delays.copy(), [var.get() for var in self.checkbox_vars], self.frame_index, self.current_file))
+            self.frames, self.delays, checkbox_states, self.frame_index, self.current_file = self.redo_stack.pop()
             self.checkbox_vars = [IntVar(value=state) for state in checkbox_states]
             for i, var in enumerate(self.checkbox_vars):
                 var.trace_add('write', lambda *args, i=i: self.set_current_frame(i))
             self.update_frame_list()
             self.show_frame()
+            self.update_title()
 
     def toggle_check_all(self):
         """Toggle all checkboxes in the frame list."""
