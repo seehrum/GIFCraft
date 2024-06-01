@@ -28,10 +28,8 @@ class GIFEditor:
     def update_title(self):
         """Update the window title to reflect the current file state."""
         if self.frames:
-            if self.current_file:
-                self.master.title(f"GIFCraft - GIF Editor - {os.path.basename(self.current_file)}")
-            else:
-                self.master.title("GIFCraft - GIF Editor - Unsaved File")
+            title = f"GIFCraft - GIF Editor - {os.path.basename(self.current_file)}" if self.current_file else "GIFCraft - GIF Editor - Unsaved File"
+            self.master.title(title)
         else:
             self.master.title("GIFCraft - GIF Editor")
 
@@ -47,13 +45,13 @@ class GIFEditor:
         self.create_file_menu()
         self.create_edit_menu()
         self.create_animation_menu()
-        self.create_help_menu()  # Add this line to include the Help menu
+        self.create_help_menu()
         self.master.config(menu=self.menu_bar)
 
     def create_file_menu(self):
         """Create the File menu."""
         file_menu = Menu(self.menu_bar, tearoff=0)
-        file_menu.add_command(label="New", command=self.new_file, accelerator="Ctrl+N")  # Add this line
+        file_menu.add_command(label="New", command=self.new_file, accelerator="Ctrl+N")
         file_menu.add_command(label="Load GIF/PNG/WebP", command=self.load_file, accelerator="Ctrl+O")
         file_menu.add_separator()
         file_menu.add_command(label="Save", command=self.save, accelerator="Ctrl+S")
@@ -75,6 +73,8 @@ class GIFEditor:
         edit_menu.add_separator()
         edit_menu.add_command(label="Check/Uncheck All", command=self.toggle_check_all)
         edit_menu.add_separator()
+        edit_menu.add_command(label="Resize All Frames", command=self.resize_all_frames_dialog)
+        edit_menu.add_separator()
         edit_menu.add_command(label="Undo", command=self.undo, accelerator="Ctrl+Z")
         edit_menu.add_command(label="Redo", command=self.redo, accelerator="Ctrl+Y")
         self.menu_bar.add_cascade(label="Edit", menu=edit_menu)
@@ -88,7 +88,7 @@ class GIFEditor:
     def create_help_menu(self):
         """Create the Help menu."""
         help_menu = Menu(self.menu_bar, tearoff=0)
-        help_menu.add_command(label="About", command=self.show_about)  # Add this line to create the About menu item
+        help_menu.add_command(label="About", command=self.show_about)
         self.menu_bar.add_cascade(label="Help", menu=help_menu)
 
     def setup_frame_list(self):
@@ -145,7 +145,7 @@ class GIFEditor:
     def bind_keyboard_events(self):
         """Bind keyboard events for navigating frames."""
         self.master.bind("<Control-n>", self.new_file)
-        self.master.bind("<Control-N>", self.new_file)    
+        self.master.bind("<Control-N>", self.new_file)
         self.master.bind("<Control-o>", self.load_file)
         self.master.bind("<Control-O>", self.load_file)
         self.master.bind("<Left>", self.previous_frame)
@@ -200,6 +200,7 @@ class GIFEditor:
         self.checkbox_vars = []
         self.current_file = None
         self.frame_index = 0
+        self.base_size = None  # Clear the base size
         self.update_frame_list()
         self.show_frame()
         self.update_title()
@@ -219,8 +220,10 @@ class GIFEditor:
 
         try:
             with Image.open(file_path) as img:
-                for frame in ImageSequence.Iterator(img):
-                    self.frames.append(self.center_image(self.resize_image(frame.copy())))
+                for i, frame in enumerate(ImageSequence.Iterator(img)):
+                    if i == 0:
+                        self.base_size = frame.size  # Store the size of the first frame
+                    self.frames.append(self.resize_to_base_size(frame.copy()))
                     delay = int(frame.info.get('duration', 100))  # Ensure delay is always an integer
                     self.delays.append(delay)
                     var = IntVar()
@@ -234,6 +237,55 @@ class GIFEditor:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load file: {e}")
 
+    def resize_to_base_size(self, image):
+        """Resize the image to the base size of the first frame and center it."""
+        if hasattr(self, 'base_size'):
+            base_width, base_height = self.base_size
+            new_image = Image.new("RGBA", self.base_size, (0, 0, 0, 0))
+            image = image.resize(self.base_size, Image.Resampling.LANCZOS)
+            new_image.paste(image, ((base_width - image.width) // 2, (base_height - image.height) // 2))
+            return new_image
+        return image
+
+    def resize_all_frames_dialog(self):
+        """Open a dialog to get the new size and resize all frames."""
+        dialog = tk.Toplevel(self.master)
+        dialog.title("Resize All Frames")
+
+        tk.Label(dialog, text="New Width:").pack(pady=5)
+        width_entry = tk.Entry(dialog)
+        width_entry.pack(pady=5)
+
+        tk.Label(dialog, text="New Height:").pack(pady=5)
+        height_entry = tk.Entry(dialog)
+        height_entry.pack(pady=5)
+
+        def resize():
+            try:
+                new_width = int(width_entry.get())
+                new_height = int(height_entry.get())
+                self.resize_all_frames(new_width, new_height)
+                dialog.destroy()
+            except ValueError:
+                messagebox.showerror("Invalid Input", "Please enter valid integers for width and height.")
+
+        tk.Button(dialog, text="Resize", command=resize).pack(pady=10)
+        dialog.grab_set()
+
+    def resize_all_frames(self, new_width=None, new_height=None):
+        """Resize all frames to the specified width and height."""
+        if new_width is None or new_height is None:
+            if hasattr(self, 'base_size'):
+                new_width, new_height = self.base_size
+            else:
+                return  # If no dimensions provided and no base size, do nothing
+
+        self.save_state()  # Save the state before making changes
+        for i, frame in enumerate(self.frames):
+            self.frames[i] = frame.resize((new_width, new_height), Image.Resampling.LANCZOS)
+        self.show_frame()
+        self.update_frame_list()
+
     def resize_image(self, image, max_width=800, max_height=600):
         """Resize the image to fit within the specified max width and height."""
         width, height = image.size
@@ -242,16 +294,6 @@ class GIFEditor:
             new_size = (int(width * scaling_factor), int(height * scaling_factor))
             image = image.resize(new_size, Image.Resampling.LANCZOS)
         return image
-
-    def center_image(self, image):
-        """Center the image within the maximum frame size."""
-        max_width = max((frame.width for frame in self.frames + [image]), default=image.width)
-        max_height = max((frame.height for frame in self.frames + [image]), default=image.height)
-
-        new_image = Image.new("RGBA", (max_width, max_height), (255, 255, 255, 0))
-        new_image.paste(image, ((max_width - image.width) // 2, (max_height - image.height) // 2))
-
-        return new_image
 
     def add_image(self):
         """Add images to the frames."""
@@ -263,15 +305,31 @@ class GIFEditor:
         try:
             for file_path in file_paths:
                 with Image.open(file_path) as image:
-                    self.frames.append(self.center_image(self.resize_image(image.copy())))
+                    # Resize the new image to match the base dimensions
+                    if not self.frames:  # If no frames, set the base size to the first image's size
+                        self.base_size = image.size
+                    image = self.resize_to_base_size(image.copy())
+                    self.frames.append(image)
                 self.delays.append(100)  # Default delay for added images
                 var = IntVar()
                 var.trace_add('write', lambda *args, i=len(self.checkbox_vars): self.set_current_frame(i))
                 self.checkbox_vars.append(var)
+
             self.update_frame_list()
             self.show_frame()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to add images: {e}")
+
+    def resize_to_max_dimensions(self, image):
+        """Resize the image to the maximum dimensions of the current frames."""
+        if not self.frames:
+            return image  # If no frames, return the image as is
+
+        max_width = max(frame.width for frame in self.frames)
+        max_height = max(frame.height for frame in self.frames)
+        
+        # Resize the image to exactly max_width and max_height
+        return image.resize((max_width, max_height), Image.Resampling.LANCZOS)
 
     def update_frame_list(self):
         """Update the listbox with the current frames and their delays."""
@@ -310,8 +368,6 @@ class GIFEditor:
                 label.pack(side=tk.LEFT, fill=tk.X)
 
         self.canvas.config(scrollregion=self.canvas.bbox("all"))
-
-
 
     def set_current_frame(self, index):
         """Set the current frame to the one corresponding to the clicked checkbox."""
@@ -491,7 +547,6 @@ class GIFEditor:
         self.history.append((self.frames.copy(), self.delays.copy(), [var.get() for var in self.checkbox_vars], self.frame_index, self.current_file))
         self.redo_stack.clear()  # Clear the redo stack on new action
 
-
     def undo(self, event=None):
         """Undo the last action."""
         if self.history:
@@ -500,6 +555,7 @@ class GIFEditor:
             self.checkbox_vars = [IntVar(value=state) for state in checkbox_states]
             for i, var in enumerate(self.checkbox_vars):
                 var.trace_add('write', lambda *args, i=i: self.set_current_frame(i))
+            self.base_size = self.frames[0].size if self.frames else None  # Reset base size based on the remaining frames
             self.update_frame_list()
             self.show_frame()
             self.update_title()
@@ -517,8 +573,6 @@ class GIFEditor:
             self.show_frame()
             self.update_title()
             self.check_all.set(False)  # Reset the check_all variable to ensure consistency
-
-
 
     def toggle_check_all(self):
         """Toggle all checkboxes in the frame list."""
@@ -540,6 +594,7 @@ class GIFEditor:
         messagebox.showinfo("About GIFCraft", "GIFCraft - GIF Editor\nVersion 1.0\n© 2024 by Seehrum")
 
 def main():
+    """Main function to initialize the GIF editor."""
     root = tk.Tk()
     app = GIFEditor(master=root)
     try:
