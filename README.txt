@@ -65,13 +65,15 @@ Save: Ctrl+S
 Save As: Ctrl+Shift+S
 Add Image: (No shortcut)
 Delete Frame(s): Delete
+View Frames: Arrow Left and Arrow Right
 Move Frame Up: Arrow Up
 Move Frame Down: Arrow Down
 Play/Stop Animation: Space
 Undo: Ctrl+Z
 Redo: Ctrl+Y
-Check/Uncheck All: (No shortcut)
+Check/Uncheck All: A
 Toggle Checkbox of Current Frame: X
+Apply 'Set Frame Delay' value: ENTER
 
 License
 
